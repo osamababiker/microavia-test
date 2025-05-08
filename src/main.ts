@@ -3,11 +3,13 @@ import {GLOBUS} from "./globus.ts";
 import {Polygon} from "./polygons/polygon.ts";
 import {POLYGONS_LAYER} from "./polygons/layer.ts";
 import {LINE_LAYER} from "./lines/layer.ts";
-import {createParallelHatching} from "./lines/parallelHatchingAlgorithm.ts";
-import {Line} from "./lines/line.ts";
+import {createControlWidget, setCurrentPolygon} from "./ui-controls.ts";
 
 GLOBUS.planet.addLayer(POLYGONS_LAYER)
 GLOBUS.planet.addLayer(LINE_LAYER)
+
+// Create the UI controls for adjusting line parameters
+createControlWidget();
 
 POLYGONS_LAYER.events.on('ldblclick', (e: any) => {
     try {
@@ -16,18 +18,8 @@ POLYGONS_LAYER.events.on('ldblclick', (e: any) => {
                 polygonCoordinates = polygon.coordinates;
 
             LINE_LAYER.clear()
-            createParallelHatching({polygonCoordinates}).map((line) => {
 
-                console.log("line", line)
-                for (let i = 0; i < line.length; i += 2) {
-                    const ll1 = line[i];
-                    const ll2 = line[i + 1];
-                    if (ll1 && ll2) {
-                        LINE_LAYER.add(new Line([[ll1.lon, ll1.lat], [ll2.lon, ll2.lat]]))
-                    }
-                }
-
-            })
+            setCurrentPolygon(polygonCoordinates);
         }
     } catch (e) {
         console.error(e)

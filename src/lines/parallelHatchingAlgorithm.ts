@@ -9,20 +9,11 @@ import {LonLat} from "@openglobus/og";
  * @param options.lineExtension Offset beyond polygon edges in meters
  * @returns Array of arrays of LonLat points representing line segments
  */
-export function createParallelHatching(options: {
+export function createParallelHatching(
     polygonCoordinates: number[][][],
     lineSpacing?: number,
     lineAngle?: number,
-    lineExtension?: number
-}): LonLat[][] {
-    const { 
-        polygonCoordinates, 
-        lineSpacing = 100, 
-        lineAngle = 0, 
-        lineExtension = 50 
-    } = options;
-    
-    console.log("polygonCoordinates", polygonCoordinates);
+    lineExtension?: number): LonLat[][] {
     
     // Handle the case when polygonCoordinates is an array of polygons
     // We'll just use the first polygon for now
