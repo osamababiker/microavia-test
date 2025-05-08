@@ -13,11 +13,12 @@ POLYGONS_LAYER.events.on('ldblclick', (e: any) => {
     try {
         if (e.pickingObject instanceof Polygon) {
             const polygon = e.pickingObject,
-                coordinates = polygon.coordinates;
+                polygonCoordinates = polygon.coordinates;
 
             LINE_LAYER.clear()
-            createParallelHatching(coordinates).map((line) => {
+            createParallelHatching({polygonCoordinates}).map((line) => {
 
+                console.log("line", line)
                 for (let i = 0; i < line.length; i += 2) {
                     const ll1 = line[i];
                     const ll2 = line[i + 1];
