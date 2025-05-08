@@ -4,89 +4,117 @@ import {LonLat} from "@openglobus/og";
 /**
  * Generate parallel hatching lines for a polygon.
  * @param options.polygonCoordinates Array of [lon, lat] closing polygon
- * @param options.step Distance between lines in meters
- * @param options.bearing Bearing angle (deg from North)
- * @param options.offset Offset beyond polygon edges in meters
+ * @param options.lineSpacing Distance between lines in meters
+ * @param options.lineAngle Bearing angle (deg from North)
+ * @param options.lineExtension Offset beyond polygon edges in meters
  * @returns Array of arrays of LonLat points representing line segments
  */
 export function createParallelHatching(options: {
     polygonCoordinates: number[][][],
-    step?: number,
-    bearing?: number,
-    offset?: number
+    lineSpacing?: number,
+    lineAngle?: number,
+    lineExtension?: number
 }): LonLat[][] {
-    const { polygonCoordinates, step = 100, bearing = 0, offset = 50 } = options;
+    const { 
+        polygonCoordinates, 
+        lineSpacing = 100, 
+        lineAngle = 0, 
+        lineExtension = 50 
+    } = options;
     
     console.log("polygonCoordinates", polygonCoordinates);
     
     // Handle the case when polygonCoordinates is an array of polygons
     // We'll just use the first polygon for now
-    const coordinates = Array.isArray(polygonCoordinates[0]) && Array.isArray(polygonCoordinates[0][0])
+    const polygonPoints = Array.isArray(polygonCoordinates[0]) && Array.isArray(polygonCoordinates[0][0])
         ? polygonCoordinates[0]  // Use first polygon if it's an array of polygons
         : polygonCoordinates;    // Otherwise use as is
     
-    if (!coordinates || coordinates.length < 4) return [];
+    if (!polygonPoints || polygonPoints.length < 4) return [];
     
-    // Earth radius
-    const R = 6371000;
+    // Earth radius in meters
+    const earthRadius = 6371000;
     
-    // Compute origin latitude for projection
-    const lat0 = coordinates.reduce((sum, p) => sum + p[1], 0) / coordinates.length;
-    const lat0Rad = lat0 * Math.PI / 180;
+    // Compute average latitude for projection
+    const avgLatitude = polygonPoints.reduce((sum, point) => sum + point[1], 0) / polygonPoints.length;
+    const avgLatitudeRadians = avgLatitude * Math.PI / 180;
     
-    // Precompute rotation
-    const bRad = bearing * Math.PI / 180;
-    const cosB = Math.cos(bRad), sinB = Math.sin(bRad);
+    // Convert line angle to radians and precompute trigonometric values
+    const angleRadians = lineAngle * Math.PI / 180;
+    const cosAngle = Math.cos(angleRadians);
+    const sinAngle = Math.sin(angleRadians);
     
     // Project and rotate polygon into 2D meters
-    const pts: { x: number; y: number }[] = coordinates.map(([lon, lat]) => {
-        const lonRad = lon * Math.PI / 180;
-        const latRad = lat * Math.PI / 180;
+    const projectedPoints = polygonPoints.map(([longitude, latitude]) => {
+        const longitudeRadians = longitude * Math.PI / 180;
+        const latitudeRadians = latitude * Math.PI / 180;
+        
         // Equirectangular projection
-        const x = R * lonRad * Math.cos(lat0Rad);
-        const y = R * latRad;
-        // Rotate coords by -bearing to align lines vertical
+        const projectedX = earthRadius * longitudeRadians * Math.cos(avgLatitudeRadians);
+        const projectedY = earthRadius * latitudeRadians;
+        
+        // Rotate coordinates to align with desired line angle
         return {
-            x: cosB * x + sinB * y,
-            y: -sinB * x + cosB * y
+            x: cosAngle * projectedX + sinAngle * projectedY,
+            y: -sinAngle * projectedX + cosAngle * projectedY
         };
     });
     
-    // Compute min/max in rotated frame
-    const xs = pts.map(p => p.x);
-    const minX = Math.min(...xs) - offset;
-    const maxX = Math.max(...xs) + offset;
+    // Find the horizontal bounds of the rotated polygon
+    const allXCoordinates = projectedPoints.map(point => point.x);
+    const leftBoundary = Math.min(...allXCoordinates) - lineExtension;
+    const rightBoundary = Math.max(...allXCoordinates) + lineExtension;
     
-    // Generate x positions
-    const lines: LonLat[][] = [];
-    for (let x0 = minX; x0 <= maxX; x0 += step) {
+    // Generate hatching lines
+    const hatchingLines = [];
+    
+    // Create lines at regular intervals from left to right
+    for (let linePosition = leftBoundary; linePosition <= rightBoundary; linePosition += lineSpacing) {
         // Find intersections with polygon edges
-        const intersects: number[] = [];
-        for (let i = 0; i < pts.length - 1; i++) {
-            const a = pts[i], b = pts[i + 1];
-            if ((x0 < a.x && x0 < b.x) || (x0 > a.x && x0 > b.x) || (a.x === b.x)) continue;
-            // Linear interpolation
-            const t = (x0 - a.x) / (b.x - a.x);
-            const y = a.y + t * (b.y - a.y);
-            intersects.push(y);
+        const intersectionPoints = [];
+        
+        // Check each edge of the polygon
+        for (let edgeIndex = 0; edgeIndex < projectedPoints.length - 1; edgeIndex++) {
+            const startPoint = projectedPoints[edgeIndex];
+            const endPoint = projectedPoints[edgeIndex + 1];
+            
+            // Skip if the line doesn't intersect this edge
+            if ((linePosition < startPoint.x && linePosition < endPoint.x) || 
+                (linePosition > startPoint.x && linePosition > endPoint.x) || 
+                (startPoint.x === endPoint.x)) {
+                continue;
+            }
+            
+            // Calculate intersection using linear interpolation
+            const edgeProgress = (linePosition - startPoint.x) / (endPoint.x - startPoint.x);
+            const intersectionY = startPoint.y + edgeProgress * (endPoint.y - startPoint.y);
+            intersectionPoints.push(intersectionY);
         }
-        intersects.sort((a, b) => a - b);
-        // Pair up intersects for segments
-        for (let j = 0; j + 1 < intersects.length; j += 2) {
-            const y1 = intersects[j] - offset;
-            const y2 = intersects[j + 1] + offset;
-            // Recover endpoints in original coords: rotate back then inverse project
-            const seg: LonLat[] = [[x0, y1], [x0, y2]].map(p => {
-                // rotate by bearing
-                const xr = cosB * p[0] - sinB * p[1];
-                const yr = sinB * p[0] + cosB * p[1];
-                const lon = (xr / (R * Math.cos(lat0Rad))) * 180 / Math.PI;
-                const lat = (yr / R) * 180 / Math.PI;
-                return new LonLat(lon, lat);
+        
+        // Sort intersection points from top to bottom
+        intersectionPoints.sort((a, b) => a - b);
+        
+        // Create line segments between pairs of intersection points
+        for (let pairIndex = 0; pairIndex + 1 < intersectionPoints.length; pairIndex += 2) {
+            const segmentStart = intersectionPoints[pairIndex] - lineExtension;
+            const segmentEnd = intersectionPoints[pairIndex + 1] + lineExtension;
+            
+            // Convert line segment back to geographic coordinates
+            const lineSegment = [[linePosition, segmentStart], [linePosition, segmentEnd]].map(point => {
+                // Rotate back to original orientation
+                const rotatedX = cosAngle * point[0] - sinAngle * point[1];
+                const rotatedY = sinAngle * point[0] + cosAngle * point[1];
+                
+                // Convert back to longitude/latitude
+                const longitude = (rotatedX / (earthRadius * Math.cos(avgLatitudeRadians))) * 180 / Math.PI;
+                const latitude = (rotatedY / earthRadius) * 180 / Math.PI;
+                
+                return new LonLat(longitude, latitude);
             });
-            lines.push(seg);
+            
+            hatchingLines.push(lineSegment);
         }
     }
     
-    return lines;
+    return hatchingLines;
 }
